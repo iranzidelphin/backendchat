@@ -20,11 +20,14 @@ const corsOrigin =
   frontendOrigins.length > 0
     ? [...new Set([...frontendOrigins, ...localOrigins])]
     : [...new Set(["http://localhost:5173", "http://127.0.0.1:5173", ...localOrigins])];
+const corsConfig = {
+  origin: corsOrigin,
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false
+};
 const io = new Server(server, {
-  cors: {
-    origin: corsOrigin,
-    methods: ["GET", "POST", "DELETE"]
-  }
+  cors: corsConfig
 });
 
 setSocketIO(io);
@@ -56,13 +59,7 @@ io.on("connection", (socket) => {
 });
 
 // Parse JSON body from incoming requests.
-app.use(
-  cors({
-    origin: corsOrigin,
-    methods: ["GET", "POST", "DELETE"],
-    credentials: false
-  })
-);
+app.use(cors(corsConfig));
 app.use(express.json());
 
 // API routes
