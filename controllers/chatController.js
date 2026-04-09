@@ -1,5 +1,6 @@
 import Message from "../models/Message.js";
 import User from "../models/User.js";
+import { isDatabaseConnected } from "../config/db.js";
 
 const normalizeValue = (value) => (typeof value === "string" ? value.trim() : "");
 let ioInstance = null;
@@ -14,7 +15,8 @@ const serializeUser = (userValue) => {
     return {
       _id: String(userValue._id),
       username: userValue.username,
-      email: userValue.email
+      email: userValue.email,
+      isLoggedIn: Boolean(userValue.isLoggedIn)
     };
   }
 
@@ -45,6 +47,12 @@ const emitSocketEvent = (eventName, payload) => {
 };
 
 export const createChatMessage = async (senderId, receiverId, text) => {
+  if (!isDatabaseConnected()) {
+    const error = new Error("Database is not connected yet. Please try again in a moment.");
+    error.statusCode = 503;
+    throw error;
+  }
+
   const normalizedSenderId = normalizeValue(senderId);
   const normalizedReceiverId = normalizeValue(receiverId);
   const normalizedText = normalizeValue(text);
@@ -52,21 +60,6 @@ export const createChatMessage = async (senderId, receiverId, text) => {
   if (!normalizedSenderId || !normalizedReceiverId || !normalizedText) {
     const error = new Error("senderId, receiverId and text are required");
     error.statusCode = 400;
-    throw error;
-  }
-
-  const sender = await User.findById(normalizedSenderId);
-  const receiver = await User.findById(normalizedReceiverId);
-
-  if (!sender) {
-    const error = new Error("Sender not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (!receiver) {
-    const error = new Error("Receiver not found");
-    error.statusCode = 404;
     throw error;
   }
 
@@ -81,7 +74,11 @@ export const createChatMessage = async (senderId, receiverId, text) => {
 
 export const getOnlineUsers = async (_req, res) => {
   try {
-    const users = await User.find({ isLoggedIn: true }).select("username email").sort({ username: 1 });
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ message: "Database is not connected yet. Please try again shortly." });
+    }
+
+    const users = await User.find().select("username email isLoggedIn").sort({ username: 1 });
     return res.status(200).json({ users });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Server error" });
@@ -90,6 +87,10 @@ export const getOnlineUsers = async (_req, res) => {
 
 export const getMessages = async (_req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ message: "Database is not connected yet. Please try again shortly." });
+    }
+
     const userId = normalizeValue(_req.query.userId);
     const chatWith = normalizeValue(_req.query.chatWith);
 
@@ -127,11 +128,35 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-export const deleteAllMessages = async (_req, res) => {
+export const deleteAllMessages = async (req, res) => {
   try {
-    await Message.deleteMany({});
-    emitSocketEvent("messages:cleared", { ok: true });
-    return res.status(200).json({ message: "All messages deleted" });
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ message: "Database is not connected yet. Please try again shortly." });
+    }
+
+    const userId = normalizeValue(req.query.userId);
+    const chatWith = normalizeValue(req.query.chatWith);
+
+    if (!userId || !chatWith) {
+      return res.status(400).json({ message: "userId and chatWith are required" });
+    }
+
+    const deleteResult = await Message.deleteMany({
+      $or: [
+        { sender: userId, receiver: chatWith },
+        { sender: chatWith, receiver: userId }
+      ]
+    });
+
+    if (ioInstance) {
+      ioInstance.to(`user:${userId}`).emit("conversation:cleared", { userId, chatWith });
+      ioInstance.to(`user:${chatWith}`).emit("conversation:cleared", { userId, chatWith });
+    }
+
+    return res.status(200).json({
+      message: "Conversation deleted",
+      deletedCount: deleteResult.deletedCount || 0
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Server error" });
   }
