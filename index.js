@@ -1,8 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import cors from "cors";
 import chatRoutes from "./routes/chatRoutes.js";
@@ -28,9 +26,6 @@ const io = new Server(server, {
     methods: ["GET", "POST", "DELETE"]
   }
 });
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const frontendDir = path.resolve(__dirname, "..", "frontend");
 
 setSocketIO(io);
 
@@ -69,22 +64,17 @@ app.use(
   })
 );
 app.use(express.json());
-app.use(express.static(frontendDir));
-app.use("/frontend", express.static(frontendDir));
 
 // API routes
 app.use("/api/users", userRoutes);
 app.use("/api/chat", chatRoutes);
 
-const sendSpa = (_req, res) => {
-  res.sendFile(path.join(frontendDir, "index.html"));
-};
-
-app.get("/", sendSpa);
-app.get("/login", sendSpa);
-app.get("/register", sendSpa);
-app.get("/chat", sendSpa);
-app.get("/index.html", sendSpa);
+app.get("/", (_req, res) => {
+  res.status(200).json({
+    message: "Chateazy backend is running",
+    status: "ok"
+  });
+});
 
 // Return a clear error for unknown routes.
 app.use((_req, res) => {
