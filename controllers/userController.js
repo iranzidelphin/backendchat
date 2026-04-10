@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import { isDatabaseConnected } from "../config/db.js";
 
 const createToken = (userId) => {
   const secret = process.env.JWT_SECRET;
@@ -16,6 +17,10 @@ const normalizeValue = (value) => (typeof value === "string" ? value.trim() : ""
 
 export const registerUser = async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ message: "Database is not connected yet. Please try again shortly." });
+    }
+
     const username = normalizeValue(req.body.username);
     const email = normalizeValue(req.body.email).toLowerCase();
     const password = normalizeValue(req.body.password);
@@ -57,6 +62,10 @@ export const registerUser = async (req, res) => {
 
 export const loginUser = async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ message: "Database is not connected yet. Please try again shortly." });
+    }
+
     const login = normalizeValue(req.body.login); // username or email
     const password = normalizeValue(req.body.password);
 
@@ -101,6 +110,10 @@ export const loginUser = async (req, res) => {
 
 export const logoutUser = async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ message: "Database is not connected yet. Please try again shortly." });
+    }
+
     const userId = normalizeValue(req.body.userId);
 
     if (!userId) {
