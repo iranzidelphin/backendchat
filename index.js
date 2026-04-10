@@ -15,11 +15,15 @@ const frontendOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL |
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
+const knownProductionOrigins = [
+  "https://chatingeazy.vercel.app",
+  "https://backendchat-nu8b.onrender.com"
+];
 const localOrigins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
 const corsOrigin =
   frontendOrigins.length > 0
-    ? [...new Set([...frontendOrigins, ...localOrigins])]
-    : [...new Set(["http://localhost:5173", "http://127.0.0.1:5173", ...localOrigins])];
+    ? [...new Set([...frontendOrigins, ...knownProductionOrigins, ...localOrigins])]
+    : [...new Set(["http://localhost:5173", "http://127.0.0.1:5173", ...knownProductionOrigins, ...localOrigins])];
 const corsConfig = {
   origin: corsOrigin,
   methods: ["GET", "POST", "DELETE", "OPTIONS"],
