@@ -6,6 +6,7 @@ import cors from "cors";
 import chatRoutes from "./routes/chatRoutes.js";
 import { createChatMessage, setSocketIO } from "./controllers/chatController.js";
 import userRoutes from "./routes/userRoutes.js";
+import { setUserSocketIO } from "./controllers/userController.js";
 import { connectDBWithRetry } from "./config/db.js";
 
 const app = express();
@@ -35,6 +36,7 @@ const io = new Server(server, {
 });
 
 setSocketIO(io);
+setUserSocketIO(io);
 
 io.on("connection", (socket) => {
   socket.on("user:join", (payload = {}) => {

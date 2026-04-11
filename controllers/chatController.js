@@ -4,6 +4,7 @@ import { isDatabaseConnected } from "../config/db.js";
 
 const normalizeValue = (value) => (typeof value === "string" ? value.trim() : "");
 let ioInstance = null;
+const toId = (value) => String(value);
 
 const serializeUser = (userValue) => {
   if (!userValue) {
@@ -63,6 +64,26 @@ export const createChatMessage = async (senderId, receiverId, text) => {
     throw error;
   }
 
+  const [sender, receiver] = await Promise.all([
+    User.findById(normalizedSenderId).select("friends"),
+    User.findById(normalizedReceiverId).select("friends")
+  ]);
+
+  if (!sender || !receiver) {
+    const error = new Error("Users not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const senderFriends = new Set((sender.friends || []).map(toId));
+  const receiverFriends = new Set((receiver.friends || []).map(toId));
+
+  if (!senderFriends.has(toId(receiver._id)) || !receiverFriends.has(toId(sender._id))) {
+    const error = new Error("Only friends can send messages to each other");
+    error.statusCode = 403;
+    throw error;
+  }
+
   const message = await Message.create({
     sender: normalizedSenderId,
     receiver: normalizedReceiverId,
@@ -96,6 +117,16 @@ export const getMessages = async (_req, res) => {
 
     if (!userId || !chatWith) {
       return res.status(400).json({ message: "userId and chatWith are required" });
+    }
+
+    const user = await User.findById(userId).select("friends");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isFriend = (user.friends || []).some((friendId) => toId(friendId) === chatWith);
+    if (!isFriend) {
+      return res.status(403).json({ message: "Only friends can access chat history" });
     }
 
     const messages = await Message.find()
@@ -139,6 +170,16 @@ export const deleteAllMessages = async (req, res) => {
 
     if (!userId || !chatWith) {
       return res.status(400).json({ message: "userId and chatWith are required" });
+    }
+
+    const user = await User.findById(userId).select("friends");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isFriend = (user.friends || []).some((friendId) => toId(friendId) === chatWith);
+    if (!isFriend) {
+      return res.status(403).json({ message: "Only friends can manage this conversation" });
     }
 
     const deleteResult = await Message.deleteMany({

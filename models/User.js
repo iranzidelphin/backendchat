@@ -26,6 +26,28 @@ const userSchema = new mongoose.Schema(
     isLoggedIn: {
       type: Boolean,
       default: false
+    },
+    friends: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      }
+    ],
+    incomingFriendRequests: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      }
+    ],
+    outgoingFriendRequests: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      }
+    ],
+    lastActiveAt: {
+      type: Date,
+      default: Date.now
     }
   },
   {
