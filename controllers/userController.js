@@ -159,6 +159,7 @@ export const registerUser = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({ username, email, password: hashedPassword });
     const token = createToken(user._id);
+    emitNetworkRefresh();
 
     return res.status(201).json({
       message: "User registered successfully",
@@ -243,9 +244,8 @@ export const getNetworkData = async (req, res) => {
     if (!currentUser) return;
     const { unreadByUser, unreadMessageCount } = await getUnreadMessageData(currentUser._id);
 
-    const onlineUsers = await User.find({
-      _id: { $ne: currentUser._id },
-      isLoggedIn: true
+    const allUsers = await User.find({
+      _id: { $ne: currentUser._id }
     }).select("username email isLoggedIn friends").sort({ username: 1 });
 
     const incomingRequests = await User.find({
@@ -272,7 +272,13 @@ export const getNetworkData = async (req, res) => {
       ),
       incomingRequests: incomingRequests.map((user) => serializeRelationshipUser(currentUser, user)),
       outgoingRequests: outgoingRequests.map((user) => serializeRelationshipUser(currentUser, user)),
-      onlineUsers: onlineUsers.map((user) =>
+      allUsers: allUsers.map((user) =>
+        serializeRelationshipUser(currentUser, {
+          ...user.toObject(),
+          unreadMessageCount: unreadByUser[toId(user._id)] || 0
+        })
+      ),
+      onlineUsers: allUsers.map((user) =>
         serializeRelationshipUser(currentUser, {
           ...user.toObject(),
           unreadMessageCount: unreadByUser[toId(user._id)] || 0
