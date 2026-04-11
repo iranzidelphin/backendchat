@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  cancelFriendRequest,
   getNetworkData,
   loginUser,
   logoutUser,
@@ -15,6 +16,7 @@ router.post("/login", loginUser);
 router.post("/logout", logoutUser);
 router.get("/network", getNetworkData);
 router.post("/friend-requests", sendFriendRequest);
+router.post("/friend-requests/cancel", cancelFriendRequest);
 router.post("/friend-requests/respond", respondToFriendRequest);
 
 export default router;

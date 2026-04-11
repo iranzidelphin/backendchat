@@ -279,6 +279,37 @@ export const sendFriendRequest = async (req, res) => {
   }
 };
 
+export const cancelFriendRequest = async (req, res) => {
+  try {
+    if (!ensureDatabase(res)) return;
+
+    const currentUser = await findUserOr404(req.body.userId, res);
+    if (!currentUser) return;
+
+    const targetUser = await findUserOr404(req.body.targetUserId, res);
+    if (!targetUser) return;
+
+    const targetUserId = toId(targetUser._id);
+    const currentUserId = toId(currentUser._id);
+    const hasOutgoing = (currentUser.outgoingFriendRequests || []).some((id) => toId(id) === targetUserId);
+
+    if (!hasOutgoing) {
+      return res.status(404).json({ message: "Friend request not found" });
+    }
+
+    currentUser.outgoingFriendRequests = (currentUser.outgoingFriendRequests || []).filter((id) => toId(id) !== targetUserId);
+    targetUser.incomingFriendRequests = (targetUser.incomingFriendRequests || []).filter((id) => toId(id) !== currentUserId);
+
+    await Promise.all([currentUser.save(), targetUser.save()]);
+    emitNetworkRefresh(currentUser._id, targetUser._id);
+
+    return res.status(200).json({ message: "Friend request canceled" });
+  } catch (error) {
+    console.error("cancelFriendRequest error:", error);
+    return res.status(500).json({ message: error.message || "Server error" });
+  }
+};
+
 export const respondToFriendRequest = async (req, res) => {
   try {
     if (!ensureDatabase(res)) return;
