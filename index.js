@@ -4,7 +4,7 @@ import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import chatRoutes from "./routes/chatRoutes.js";
-import { createChatMessage, setSocketIO } from "./controllers/chatController.js";
+import { createChatMessage, markConversationRead, setSocketIO } from "./controllers/chatController.js";
 import userRoutes from "./routes/userRoutes.js";
 import { setUserSocketIO } from "./controllers/userController.js";
 import { connectDBWithRetry } from "./config/db.js";
@@ -60,6 +60,15 @@ io.on("connection", (socket) => {
       ack({ ok: true, message: savedMessage });
     } catch (error) {
       ack({ ok: false, message: error.message || "Message send failed" });
+    }
+  });
+
+  socket.on("messages:read", async (payload = {}, ack = () => {}) => {
+    try {
+      await markConversationRead(payload.userId, payload.chatWith);
+      ack({ ok: true });
+    } catch (error) {
+      ack({ ok: false, message: error.message || "Could not mark messages as read" });
     }
   });
 });

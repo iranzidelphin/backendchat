@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import Message from "../models/Message.js";
 import { isDatabaseConnected } from "../config/db.js";
 
 let ioInstance = null;
@@ -54,6 +55,14 @@ const emitNetworkRefresh = (...userIds) => {
   });
 };
 
+const emitToUser = (userId, eventName, payload) => {
+  if (!ioInstance || !userId) {
+    return;
+  }
+
+  ioInstance.to(`user:${toId(userId)}`).emit(eventName, payload);
+};
+
 const relationForUser = (currentUser, otherUserId) => {
   const targetId = toId(otherUserId);
   const friends = new Set((currentUser.friends || []).map(toId));
@@ -75,9 +84,34 @@ const serializeRelationshipUser = (currentUser, user) => {
     email: user.email,
     isLoggedIn: Boolean(user.isLoggedIn),
     friendCount: Array.isArray(user.friends) ? user.friends.length : 0,
+    unreadMessageCount: user.unreadMessageCount || 0,
     relation,
     canMessage: relation === "friend"
   };
+};
+
+const getUnreadMessageData = async (userObjectId) => {
+  const unreadRows = await Message.aggregate([
+    {
+      $match: {
+        receiver: userObjectId,
+        readByReceiver: false
+      }
+    },
+    {
+      $group: {
+        _id: "$sender",
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const unreadByUser = Object.fromEntries(
+    unreadRows.map((row) => [toId(row._id), Number(row.count) || 0])
+  );
+  const unreadMessageCount = unreadRows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+
+  return { unreadByUser, unreadMessageCount };
 };
 
 const findUserOr404 = async (userId, res) => {
@@ -207,6 +241,7 @@ export const getNetworkData = async (req, res) => {
 
     const currentUser = await findUserOr404(req.query.userId, res);
     if (!currentUser) return;
+    const { unreadByUser, unreadMessageCount } = await getUnreadMessageData(currentUser._id);
 
     const onlineUsers = await User.find({
       _id: { $ne: currentUser._id },
@@ -227,10 +262,22 @@ export const getNetworkData = async (req, res) => {
 
     return res.status(200).json({
       friendCount: (currentUser.friends || []).length,
-      friends: friends.map((user) => serializeRelationshipUser(currentUser, user)),
+      unreadMessageCount,
+      unreadMessagesByUser: unreadByUser,
+      friends: friends.map((user) =>
+        serializeRelationshipUser(currentUser, {
+          ...user.toObject(),
+          unreadMessageCount: unreadByUser[toId(user._id)] || 0
+        })
+      ),
       incomingRequests: incomingRequests.map((user) => serializeRelationshipUser(currentUser, user)),
       outgoingRequests: outgoingRequests.map((user) => serializeRelationshipUser(currentUser, user)),
-      onlineUsers: onlineUsers.map((user) => serializeRelationshipUser(currentUser, user))
+      onlineUsers: onlineUsers.map((user) =>
+        serializeRelationshipUser(currentUser, {
+          ...user.toObject(),
+          unreadMessageCount: unreadByUser[toId(user._id)] || 0
+        })
+      )
     });
   } catch (error) {
     console.error("getNetworkData error:", error);
@@ -271,6 +318,13 @@ export const sendFriendRequest = async (req, res) => {
 
     await Promise.all([currentUser.save(), targetUser.save()]);
     emitNetworkRefresh(currentUser._id, targetUser._id);
+    emitToUser(targetUser._id, "friend-request:new", {
+      fromUser: {
+        _id: toId(currentUser._id),
+        username: currentUser.username,
+        email: currentUser.email
+      }
+    });
 
     return res.status(200).json({ message: "Friend request sent" });
   } catch (error) {

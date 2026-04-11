@@ -47,6 +47,41 @@ const emitSocketEvent = (eventName, payload) => {
   }
 };
 
+const emitSocketEventToUser = (userId, eventName, payload) => {
+  if (!ioInstance || !userId) {
+    return;
+  }
+
+  ioInstance.to(`user:${toId(userId)}`).emit(eventName, payload);
+};
+
+export const markConversationRead = async (userId, chatWith) => {
+  const normalizedUserId = normalizeValue(userId);
+  const normalizedChatWith = normalizeValue(chatWith);
+
+  if (!normalizedUserId || !normalizedChatWith) {
+    return 0;
+  }
+
+  const result = await Message.updateMany(
+    {
+      sender: normalizedChatWith,
+      receiver: normalizedUserId,
+      readByReceiver: false
+    },
+    {
+      $set: { readByReceiver: true }
+    }
+  );
+
+  emitSocketEventToUser(normalizedUserId, "messages:read", {
+    userId: normalizedUserId,
+    chatWith: normalizedChatWith
+  });
+
+  return result.modifiedCount || 0;
+};
+
 export const createChatMessage = async (senderId, receiverId, text) => {
   if (!isDatabaseConnected()) {
     const error = new Error("Database is not connected yet. Please try again in a moment.");
@@ -87,7 +122,8 @@ export const createChatMessage = async (senderId, receiverId, text) => {
   const message = await Message.create({
     sender: normalizedSenderId,
     receiver: normalizedReceiverId,
-    text: normalizedText
+    text: normalizedText,
+    readByReceiver: false
   });
   const populated = await Message.findById(message._id).populate("sender receiver", "username email");
   return serializeMessage(populated);
@@ -140,6 +176,8 @@ export const getMessages = async (_req, res) => {
       .sort({ createdAt: 1 })
       .limit(200);
 
+    await markConversationRead(userId, chatWith);
+
     return res.status(200).json({ messages: messages.map(serializeMessage) });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Server error" });
@@ -151,6 +189,10 @@ export const sendMessage = async (req, res) => {
     const populatedMessage = await createChatMessage(req.body.senderId, req.body.receiverId, req.body.text);
 
     emitSocketEvent("message:new", { message: populatedMessage });
+    emitSocketEventToUser(populatedMessage.receiver?._id, "network:refresh", {
+      scope: "user",
+      userId: populatedMessage.receiver?._id
+    });
 
     return res.status(201).json({ message: "Message sent", data: populatedMessage });
   } catch (error) {
