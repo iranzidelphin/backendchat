@@ -28,6 +28,8 @@ const messageSchema = new mongoose.Schema(
   }
 );
 
+messageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 30 });
+
 const Message = mongoose.model("Message", messageSchema);
 
 export default Message;
