@@ -20,13 +20,37 @@ const knownProductionOrigins = [
   "https://chatingeazy.vercel.app",
   "https://backendchat-nu8b.onrender.com"
 ];
-const localOrigins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
-const corsOrigin =
-  frontendOrigins.length > 0
-    ? [...new Set([...frontendOrigins, ...knownProductionOrigins, ...localOrigins])]
-    : [...new Set(["http://localhost:5173", "http://127.0.0.1:5173", ...knownProductionOrigins, ...localOrigins])];
+const localOrigins = [
+  `http://localhost:${port}`,
+  `http://127.0.0.1:${port}`,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
+];
+const allowedOrigins = new Set([
+  ...frontendOrigins,
+  ...knownProductionOrigins,
+  ...localOrigins
+]);
+const isAllowedOrigin = (origin = "") => {
+  if (!origin || origin === "null") {
+    return true;
+  }
+
+  if (allowedOrigins.has(origin)) {
+    return true;
+  }
+
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+};
 const corsConfig = {
-  origin: corsOrigin,
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin || "unknown"} is not allowed by CORS`));
+  },
   methods: ["GET", "POST", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: false
