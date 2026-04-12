@@ -18,6 +18,8 @@ const createToken = (userId) => {
 
 const normalizeValue = (value) => (typeof value === "string" ? value.trim() : "");
 const toId = (value) => String(value);
+const getNewestFirstIdOrder = (values = []) =>
+  [...values].map(toId).filter(Boolean).reverse();
 
 const ensureDatabase = (res) => {
   if (!isDatabaseConnected()) {
@@ -77,6 +79,17 @@ const relationForUser = (currentUser, otherUserId) => {
 
 const serializeRelationshipUser = (currentUser, user) => {
   const relation = relationForUser(currentUser, user._id);
+  const incomingOrder = getNewestFirstIdOrder(currentUser.incomingFriendRequests || []);
+  const outgoingOrder = getNewestFirstIdOrder(currentUser.outgoingFriendRequests || []);
+  const targetId = toId(user._id);
+  const incomingIndex = incomingOrder.indexOf(targetId);
+  const outgoingIndex = outgoingOrder.indexOf(targetId);
+  const requestRank =
+    incomingIndex >= 0
+      ? incomingOrder.length - incomingIndex
+      : outgoingIndex >= 0
+        ? outgoingOrder.length - outgoingIndex
+        : 0;
 
   return {
     _id: toId(user._id),
@@ -86,6 +99,7 @@ const serializeRelationshipUser = (currentUser, user) => {
     friendCount: Array.isArray(user.friends) ? user.friends.length : 0,
     unreadMessageCount: user.unreadMessageCount || 0,
     relation,
+    requestRank,
     canMessage: relation === "friend"
   };
 };
@@ -197,7 +211,6 @@ export const loginUser = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    user.isLoggedIn = true;
     user.lastActiveAt = new Date();
     await user.save();
 
@@ -248,6 +261,11 @@ export const getNetworkData = async (req, res) => {
       _id: { $ne: currentUser._id }
     }).select("username email isLoggedIn friends").sort({ username: 1 });
 
+    const incomingRequestOrder = getNewestFirstIdOrder(currentUser.incomingFriendRequests || []);
+    const outgoingRequestOrder = getNewestFirstIdOrder(currentUser.outgoingFriendRequests || []);
+    const sortByCustomOrder = (users, customOrder) =>
+      [...users].sort((a, b) => customOrder.indexOf(toId(a._id)) - customOrder.indexOf(toId(b._id)));
+
     const incomingRequests = await User.find({
       _id: { $in: currentUser.incomingFriendRequests || [] }
     }).select("username email isLoggedIn friends").sort({ username: 1 });
@@ -270,8 +288,8 @@ export const getNetworkData = async (req, res) => {
           unreadMessageCount: unreadByUser[toId(user._id)] || 0
         })
       ),
-      incomingRequests: incomingRequests.map((user) => serializeRelationshipUser(currentUser, user)),
-      outgoingRequests: outgoingRequests.map((user) => serializeRelationshipUser(currentUser, user)),
+      incomingRequests: sortByCustomOrder(incomingRequests, incomingRequestOrder).map((user) => serializeRelationshipUser(currentUser, user)),
+      outgoingRequests: sortByCustomOrder(outgoingRequests, outgoingRequestOrder).map((user) => serializeRelationshipUser(currentUser, user)),
       allUsers: allUsers.map((user) =>
         serializeRelationshipUser(currentUser, {
           ...user.toObject(),

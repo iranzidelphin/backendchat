@@ -8,6 +8,7 @@ import { createChatMessage, markConversationRead, setSocketIO } from "./controll
 import userRoutes from "./routes/userRoutes.js";
 import { setUserSocketIO } from "./controllers/userController.js";
 import { connectDBWithRetry } from "./config/db.js";
+import User from "./models/User.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -45,7 +46,7 @@ const isAllowedOrigin = (origin = "") => {
 const corsConfig = {
   origin(origin, callback) {
     if (isAllowedOrigin(origin)) {
-      callback(null, true);
+      callback(null, origin && origin !== "null" ? origin : "*");
       return;
     }
 
@@ -58,6 +59,40 @@ const corsConfig = {
 const io = new Server(server, {
   cors: corsConfig
 });
+const activeSocketsByUser = new Map();
+
+const toId = (value) => (value ? String(value) : "");
+const getSocketSet = (userId) => {
+  const id = toId(userId);
+  if (!id) return null;
+  if (!activeSocketsByUser.has(id)) activeSocketsByUser.set(id, new Set());
+  return activeSocketsByUser.get(id);
+};
+const setUserPresence = async (userId, isActive) => {
+  const id = toId(userId);
+  if (!id) return;
+  await User.findByIdAndUpdate(id, {
+    $set: {
+      isLoggedIn: Boolean(isActive),
+      lastActiveAt: new Date()
+    }
+  }).catch(() => {});
+  io.to(`user:${id}`).emit("presence:updated", { userId: id, isLoggedIn: Boolean(isActive) });
+  io.emit("network:refresh", { scope: "global" });
+};
+const updatePresenceForSocket = async (socket, isActive) => {
+  const userId = toId(socket.data.userId);
+  if (!userId) return;
+  const socketSet = getSocketSet(userId);
+  if (!socketSet) return;
+
+  if (isActive) socketSet.add(socket.id);
+  else socketSet.delete(socket.id);
+
+  const userIsActive = socketSet.size > 0;
+  if (!userIsActive) activeSocketsByUser.delete(userId);
+  await setUserPresence(userId, userIsActive);
+};
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
@@ -83,6 +118,15 @@ io.on("connection", (socket) => {
     socket.join(`user:${userId}`);
   });
 
+  socket.on("user:presence", async (payload = {}, ack = () => {}) => {
+    try {
+      await updatePresenceForSocket(socket, Boolean(payload.active));
+      ack({ ok: true });
+    } catch (error) {
+      ack({ ok: false, message: error.message || "Could not update presence" });
+    }
+  });
+
   socket.on("message:send", async (payload = {}, ack = () => {}) => {
     try {
       const savedMessage = await createChatMessage(payload.senderId, payload.receiverId, payload.text);
@@ -104,6 +148,40 @@ io.on("connection", (socket) => {
     } catch (error) {
       ack({ ok: false, message: error.message || "Could not mark messages as read" });
     }
+  });
+
+  socket.on("typing:start", (payload = {}, ack = () => {}) => {
+    try {
+      const senderId = toId(payload.senderId);
+      const receiverId = toId(payload.receiverId);
+      if (!senderId || !receiverId) {
+        ack({ ok: false, message: "senderId and receiverId are required" });
+        return;
+      }
+      io.to(`user:${receiverId}`).emit("typing:start", { senderId, receiverId });
+      ack({ ok: true });
+    } catch (error) {
+      ack({ ok: false, message: error.message || "Could not broadcast typing state" });
+    }
+  });
+
+  socket.on("typing:stop", (payload = {}, ack = () => {}) => {
+    try {
+      const senderId = toId(payload.senderId);
+      const receiverId = toId(payload.receiverId);
+      if (!senderId || !receiverId) {
+        ack({ ok: false, message: "senderId and receiverId are required" });
+        return;
+      }
+      io.to(`user:${receiverId}`).emit("typing:stop", { senderId, receiverId });
+      ack({ ok: true });
+    } catch (error) {
+      ack({ ok: false, message: error.message || "Could not clear typing state" });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    updatePresenceForSocket(socket, false).catch(() => {});
   });
 });
 
