@@ -35,6 +35,16 @@ const io = new Server(server, {
   cors: corsConfig
 });
 
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${port} is already in use. Another backend instance is likely running on http://localhost:${port}. Stop it before starting a new one.`);
+    process.exit(1);
+  }
+
+  console.error("Server failed to start:", error.message || error);
+  process.exit(1);
+});
+
 setSocketIO(io);
 setUserSocketIO(io);
 
