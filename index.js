@@ -129,7 +129,7 @@ io.on("connection", (socket) => {
 
   socket.on("message:send", async (payload = {}, ack = () => {}) => {
     try {
-      const savedMessage = await createChatMessage(payload.senderId, payload.receiverId, payload.text);
+      const savedMessage = await createChatMessage(payload.senderId, payload.receiverId, payload.text, payload.replyToId);
 
       const receiverId = savedMessage.receiver?._id ? String(savedMessage.receiver._id) : "";
       const receiverRoom = `user:${receiverId}`;

@@ -18,9 +18,18 @@ const messageSchema = new mongoose.Schema(
       trim: true,
       maxlength: [500, "Message cannot exceed 500 characters"]
     },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+      default: null
+    },
     readByReceiver: {
       type: Boolean,
       default: false
+    },
+    editedAt: {
+      type: Date,
+      default: null
     }
   },
   {
